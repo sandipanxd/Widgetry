@@ -4,6 +4,7 @@ const axios = require('axios');
 const jwt = require('jsonwebtoken');
 const db = require('../database');
 const analyticsDb = require('../database_analytics');
+const auditDb = require('../database_audits');
 const { apiCache } = require('../middleware/cache');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_widgetry_key';
@@ -233,6 +234,20 @@ router.put('/:id', (req, res) => {
       },
     ];
 
+    const user = getOptionalUser(req);
+    const userId = user ? user.id : 'anonymous';
+    const username = user ? user.username : 'Anonymous User';
+
+    const changedKeys = Object.keys(config || {}).filter(
+      (k) => JSON.stringify(widget.config?.[k]) !== JSON.stringify(config?.[k])
+    );
+
+    auditDb.recordLog(widget.id, userId, username, 'update_config', {
+      prevName: widget.name,
+      newName: name,
+      changedKeys
+    });
+
     const updated = db.update(req.params.id, {
       name,
       config,
@@ -253,7 +268,29 @@ router.get('/:id/history', (req, res) => {
     }
     res.json(widget.history || []);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch widget history' });
+    res.status(500).json({ error: 'Failed to fetch version history' });
+  }
+});
+
+// GET widget audit logs
+router.get('/:id/audit-logs', (req, res) => {
+  try {
+    const widget = db.getById(req.params.id);
+    if (!widget) {
+      return res.status(404).json({ error: 'Widget not found' });
+    }
+
+    if (widget.userId) {
+      const user = getOptionalUser(req);
+      if (!user || user.id !== widget.userId) {
+        return res.status(403).json({ error: 'Access denied: private widget logs' });
+      }
+    }
+
+    const logs = auditDb.getLogsForWidget(req.params.id);
+    res.json(logs);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve audit logs' });
   }
 });
 
@@ -699,6 +736,15 @@ router.post('/:id/share-org', (req, res) => {
     if (!widget) {
       return res.status(404).json({ error: 'Widget not found' });
     }
+
+    const user = getOptionalUser(req);
+    const userId = user ? user.id : 'anonymous';
+    const username = user ? user.username : 'Anonymous User';
+
+    auditDb.recordLog(widget.id, userId, username, 'share_org', {
+      orgId,
+      accessLevel
+    });
 
     const updatedConfig = {
       ...(widget.config || {}),

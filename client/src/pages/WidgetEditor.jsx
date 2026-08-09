@@ -247,6 +247,31 @@ export default function WidgetEditor({
   const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  const [isAuditOpen, setIsAuditOpen] = useState(false);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [loadingAudits, setLoadingAudits] = useState(false);
+
+  const fetchAuditLogs = async () => {
+    if (!widgetId) return;
+    setLoadingAudits(true);
+    try {
+      const headers = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch(`/api/widgets/${widgetId}/audit-logs`, {
+        headers,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAuditLogs(data);
+      }
+    } catch (err) {
+      console.error('Error fetching audit logs:', err);
+    } finally {
+      setLoadingAudits(false);
+    }
+  };
 
   const socketRef = useRef(null);
 
@@ -500,26 +525,50 @@ export default function WidgetEditor({
           </button>
 
           {!isNew && widgetId && (
-            <button
-              className="btn btn-secondary"
-              style={{
-                marginBottom: '1.5rem',
-                width: '100%',
-                justifyContent: 'flex-start',
-                gap: '0.4rem',
-                border: '1px solid rgba(99, 102, 241, 0.4)',
-                background: 'rgba(99, 102, 241, 0.05)',
-              }}
-              onClick={() => {
-                setIsAnalyticsOpen(true);
-                fetchAnalytics();
-              }}
-            >
-              <LucideIcons.BarChart3 size={16} style={{ color: '#818cf8' }} />
-              <span style={{ color: '#818cf8', fontWeight: '600' }}>
-                View Analytics
-              </span>
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+              <button
+                className="btn btn-secondary"
+                style={{
+                  flex: 1,
+                  justifyContent: 'center',
+                  gap: '0.4rem',
+                  border: '1px solid rgba(99, 102, 241, 0.4)',
+                  background: 'rgba(99, 102, 241, 0.05)',
+                  fontSize: '0.78rem',
+                  padding: '0.5rem 0.25rem',
+                }}
+                onClick={() => {
+                  setIsAnalyticsOpen(true);
+                  fetchAnalytics();
+                }}
+              >
+                <LucideIcons.BarChart3 size={15} style={{ color: '#818cf8' }} />
+                <span style={{ color: '#818cf8', fontWeight: '600' }}>
+                  Analytics
+                </span>
+              </button>
+              <button
+                className="btn btn-secondary"
+                style={{
+                  flex: 1,
+                  justifyContent: 'center',
+                  gap: '0.4rem',
+                  border: '1px solid rgba(245, 158, 11, 0.4)',
+                  background: 'rgba(245, 158, 11, 0.05)',
+                  fontSize: '0.78rem',
+                  padding: '0.5rem 0.25rem',
+                }}
+                onClick={() => {
+                  setIsAuditOpen(true);
+                  fetchAuditLogs();
+                }}
+              >
+                <LucideIcons.ClipboardList size={15} style={{ color: '#fbbf24' }} />
+                <span style={{ color: '#fbbf24', fontWeight: '600' }}>
+                  Audit Logs
+                </span>
+              </button>
+            </div>
           )}
 
           <div className="config-group">
@@ -1226,6 +1275,122 @@ export default function WidgetEditor({
             title={config.tooltipText || ''}
           >
             <ViewComponent config={config} />
+          </div>
+        </div>
+      )}
+
+      {/* Audit Logs Modal overlay */}
+      {isAuditOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => setIsAuditOpen(false)}
+        >
+          <div
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: '500px',
+              background: 'rgba(30, 41, 59, 0.85)',
+              backdropFilter: 'blur(20px)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.4)',
+              borderRadius: '16px',
+              padding: '2rem',
+            }}
+          >
+            <div
+              className="modal-header"
+              style={{ border: 'none', padding: 0, marginBottom: '1.5rem' }}
+            >
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+              >
+                <LucideIcons.ClipboardList size={24} style={{ color: '#fbbf24' }} />
+                <h2 style={{ fontSize: '1.5rem', fontWeight: '800' }}>
+                  Workspace Audit Logs
+                </h2>
+              </div>
+              <button
+                className="modal-close"
+                onClick={() => setIsAuditOpen(false)}
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <LucideIcons.X size={20} />
+              </button>
+            </div>
+
+            {loadingAudits ? (
+              <p
+                style={{
+                  textAlign: 'center',
+                  padding: '2rem',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                Loading audit history...
+              </p>
+            ) : !auditLogs || auditLogs.length === 0 ? (
+              <p
+                style={{
+                  textAlign: 'center',
+                  padding: '2rem',
+                  color: 'var(--text-muted)',
+                  fontSize: '0.9rem',
+                }}
+              >
+                No audit entries recorded for this widget yet.
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1rem',
+                  maxHeight: '350px',
+                  overflowY: 'auto',
+                  paddingRight: '0.5rem',
+                }}
+              >
+                {auditLogs.map((log) => (
+                  <div
+                    key={log.id}
+                    style={{
+                      background: 'rgba(0, 0, 0, 0.2)',
+                      border: '1px solid rgba(255, 255, 255, 0.05)',
+                      borderRadius: '8px',
+                      padding: '0.75rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.25rem',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      <span>👤 {log.username}</span>
+                      <span>{new Date(log.timestamp).toLocaleString()}</span>
+                    </div>
+                    <div style={{ fontSize: '0.82rem', fontWeight: '600', color: '#fff', marginTop: '0.15rem' }}>
+                      {log.action === 'share_org' ? '🔗 Widget Shared with Org' : '⚙️ Configuration Updated'}
+                    </div>
+                    {log.details && (
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                        {log.action === 'share_org' ? (
+                          <span>Organization ID: <code>{log.details.orgId}</code> ({log.details.accessLevel})</span>
+                        ) : (
+                          <span>
+                            Changed fields:{' '}
+                            {log.details.changedKeys && log.details.changedKeys.length > 0 ? (
+                              log.details.changedKeys.map(k => <code key={k} style={{ margin: '0 2px', background: 'rgba(255,255,255,0.08)', padding: '1px 3px', borderRadius: '3px' }}>{k}</code>)
+                            ) : (
+                              <span style={{ fontStyle: 'italic' }}>None (Metadata/Name only)</span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
