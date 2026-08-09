@@ -547,35 +547,43 @@ router.get('/:id/export', (req, res) => {
       return res.status(404).json({ error: 'Widget not found' });
     }
 
-    // 1. Resolve widget type React view file path
-    const viewFilePath = path.join(
-      __dirname,
-      `../../client/src/widgets/${widget.type}/${widget.type}WidgetView.jsx`,
-    );
-    if (!fs.existsSync(viewFilePath)) {
-      return res.status(500).json({
-        error: `Widget view for type '${widget.type}' not found on server`,
-      });
-    }
+    const AdmZip = require('adm-zip');
+    const zip = new AdmZip();
 
-    let viewCode = fs.readFileSync(viewFilePath, 'utf8');
+    // Helper to transpile and return single HTML file string
+    const getWidgetHtml = (w) => {
+      const viewFilePath = path.join(
+        __dirname,
+        `../../client/src/widgets/${w.type}/${w.type}WidgetView.jsx`
+      );
+      if (!fs.existsSync(viewFilePath)) {
+        throw new Error(`Widget view for type '${w.type}' not found on server`);
+      }
 
-    // 2. Transpile/clean React JSX code for standard Babel CDN compile in index.html
-    // Remove imports
-    viewCode = viewCode.replace(/import\s+.*?;/g, '');
-    // Strip "export default" to let Babel resolve components globally
-    viewCode = viewCode.replace(
-      /export\s+default\s+function\s+(\w+)/g,
-      'function $1',
-    );
+      let viewCode = fs.readFileSync(viewFilePath, 'utf8');
 
-    // 3. Assemble self-contained standalone HTML bundle
-    const htmlContent = `<!DOCTYPE html>
+      // Strip imports
+      viewCode = viewCode.replace(/import\s+.*?;/g, '');
+      // Strip default export
+      viewCode = viewCode.replace(
+        /export\s+default\s+function\s+(\w+)/g,
+        'function $1'
+      );
+
+      // Replace iframe urls locally for grid views
+      if (w.type === 'grid') {
+        viewCode = viewCode.replace(
+          /\/widget\/render\/\$\{item\.widgetId\}/g,
+          './widgets/sub-widget-${item.widgetId}.html'
+        );
+      }
+
+      const htmlContent = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${widget.name || 'Widgetry Widget'}</title>
+  <title>${w.name || 'Widgetry Widget'}</title>
   
   <!-- Premium Outfit Google Font -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -608,7 +616,6 @@ router.get('/:id/export', (req, res) => {
   <script type="text/babel">
     const { useState, useEffect, useRef, useMemo, useCallback, Fragment } = React;
 
-    // Preserved GRADIENTS map
     const GRADIENTS = {
       royal:     'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',
       ocean:     'linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)',
@@ -632,13 +639,10 @@ router.get('/:id/export', (req, res) => {
       obsidian:  'linear-gradient(135deg, #1c1c1c 0%, #3d3d3d 100%)'
     };
 
-    // Configuration object
-    const widgetConfig = ${JSON.stringify(widget.config, null, 2)};
+    const widgetConfig = ${JSON.stringify(w.config, null, 2)};
 
-    // Component source
-    ${viewCode}
+    \${viewCode}
 
-    // Dynamic React mount
     const container = document.getElementById('root');
     const root = ReactDOM.createRoot(container);
 
@@ -653,6 +657,12 @@ router.get('/:id/export', (req, res) => {
       (typeof AnalogClockWidgetView !== 'undefined' && AnalogClockWidgetView) ||
       (typeof TriviaWidgetView !== 'undefined' && TriviaWidgetView) ||
       (typeof PomodoroWidgetView !== 'undefined' && PomodoroWidgetView) ||
+      (typeof WorldClockWidgetView !== 'undefined' && WorldClockWidgetView) ||
+      (typeof RSSFeedWidgetView !== 'undefined' && RSSFeedWidgetView) ||
+      (typeof AudioPlayerWidgetView !== 'undefined' && AudioPlayerWidgetView) ||
+      (typeof CustomScriptWidgetView !== 'undefined' && CustomScriptWidgetView) ||
+      (typeof WhiteboardWidgetView !== 'undefined' && WhiteboardWidgetView) ||
+      (typeof GridWidgetView !== 'undefined' && GridWidgetView) ||
       (typeof SpotifyWidgetView !== 'undefined' && SpotifyWidgetView);
 
     if (ComponentToRender) {
@@ -663,17 +673,36 @@ router.get('/:id/export', (req, res) => {
   </script>
 </body>
 </html>`;
+      return htmlContent;
+    };
 
-    // 4. Create ZIP bundle
-    const AdmZip = require('adm-zip');
-    const zip = new AdmZip();
-    zip.addFile('index.html', Buffer.from(htmlContent, 'utf-8'));
+    // Export root widget index.html
+    const rootHtml = getWidgetHtml(widget);
+    zip.addFile('index.html', Buffer.from(rootHtml, 'utf-8'));
+
+    // Recursively resolve nested widgets inside Grid widget layouts
+    if (widget.type === 'grid') {
+      const nestedItems = widget.config?.items || [];
+      nestedItems.forEach((item) => {
+        if (item.widgetId) {
+          const subWidget = db.getById(item.widgetId);
+          if (subWidget) {
+            try {
+              const subWidgetHtml = getWidgetHtml(subWidget);
+              zip.addFile(`widgets/sub-widget-${subWidget.id}.html`, Buffer.from(subWidgetHtml, 'utf-8'));
+            } catch (err) {
+              console.warn(`Skipping sub-widget export for ${item.widgetId}:`, err.message);
+            }
+          }
+        }
+      });
+    }
 
     const zipBuffer = zip.toBuffer();
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename=${widget.type}-widget-${widget.id}.zip`,
+      `attachment; filename=${widget.type}-widget-${widget.id}.zip`
     );
     res.setHeader('Content-Length', zipBuffer.length);
     res.send(zipBuffer);
