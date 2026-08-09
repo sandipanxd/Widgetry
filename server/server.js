@@ -61,6 +61,15 @@ io.on('connection', (socket) => {
   socket.on('edit-config', ({ widgetId, name, config }) => {
     socket.to(widgetId).emit('config-updated', { name, config });
   });
+
+  // Broadcast whiteboard events
+  socket.on('draw-line', ({ widgetId, from, to, color, size }) => {
+    socket.to(widgetId).emit('line-drawn', { from, to, color, size });
+  });
+
+  socket.on('clear-whiteboard', ({ widgetId }) => {
+    socket.to(widgetId).emit('whiteboard-cleared');
+  });
 });
 
 server.listen(PORT, () => {
