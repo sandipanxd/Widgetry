@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { widgetRegistry } from '../widgets';
 import * as LucideIcons from 'lucide-react';
 import { io } from 'socket.io-client';
+import { saveDraft, getDraft, clearDraft } from '../utils/indexedDB';
 
 const AnalyticsTrendChart = ({ analyticsData }) => {
   const [timeframe, setTimeframe] = useState('daily');
@@ -250,6 +251,7 @@ export default function WidgetEditor({
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [auditLogs, setAuditLogs] = useState([]);
   const [loadingAudits, setLoadingAudits] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState(null);
 
   const fetchAuditLogs = async () => {
     if (!widgetId) return;
@@ -320,6 +322,9 @@ export default function WidgetEditor({
           ...(typeDetails.defaultConfig || {}),
           webhookToken: generateWebhookToken(),
         });
+        getDraft('new').then((draft) => {
+          if (draft) setPendingDraft(draft);
+        });
       } else {
         // Fallback if invalid type
         navigate('/');
@@ -371,6 +376,14 @@ export default function WidgetEditor({
           };
         }
         setConfig(loadedConfig);
+        getDraft(id).then((draft) => {
+          if (draft) {
+            const hasChanges = draft.name !== data.name || JSON.stringify(draft.config) !== JSON.stringify(loadedConfig);
+            if (hasChanges) {
+              setPendingDraft(draft);
+            }
+          }
+        });
       } else {
         alert('Widget not found');
         navigate('/');
@@ -382,6 +395,16 @@ export default function WidgetEditor({
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!config || Object.keys(config).length === 0 || loading) return;
+
+    const timer = setTimeout(() => {
+      saveDraft(widgetId || 'new', widgetName, config);
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [config, widgetName, widgetId, loading]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -408,10 +431,10 @@ export default function WidgetEditor({
 
       if (res.ok) {
         const data = await res.json();
-        // If it was a new widget, transition to edit route with new ID
+        clearDraft(widgetId || 'new');
+        clearDraft(data.id);
         if (isNew) {
           window.history.pushState({}, '', `/edit/${data.id}`);
-          // Trigger popstate so App.jsx handles the route state change silently without refreshing
           window.dispatchEvent(new Event('navigate'));
         } else {
           alert('Widget saved successfully!');
@@ -1391,6 +1414,78 @@ export default function WidgetEditor({
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Draft Recovery Modal */}
+      {pendingDraft && (
+        <div className="modal-overlay" style={{ zIndex: 200000 }}>
+          <div
+            className="modal"
+            style={{
+              maxWidth: '420px',
+              background: 'rgba(30, 41, 59, 0.9)',
+              backdropFilter: 'blur(20px)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+              borderRadius: '16px',
+              padding: '2rem',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>💾</div>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: '800', marginBottom: '0.5rem', color: '#fff' }}>
+              Restore Unsaved Draft?
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.5' }}>
+              We detected unsaved changes from{' '}
+              <strong style={{ color: '#fff' }}>
+                {new Date(pendingDraft.timestamp).toLocaleString()}
+              </strong>{' '}
+              for this widget. Would you like to restore your progress?
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+              <button
+                className="btn btn-primary"
+                style={{
+                  background: '#6366f1',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '0.5rem 1.25rem',
+                  fontSize: '0.85rem',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+                onClick={() => {
+                  if (pendingDraft.name) setWidgetName(pendingDraft.name);
+                  if (pendingDraft.config) setConfig(pendingDraft.config);
+                  setPendingDraft(null);
+                }}
+              >
+                Restore Draft
+              </button>
+              <button
+                className="btn btn-secondary"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: 'var(--text-secondary)',
+                  borderRadius: '8px',
+                  padding: '0.5rem 1.25rem',
+                  fontSize: '0.85rem',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+                onClick={() => {
+                  clearDraft(widgetId || 'new');
+                  setPendingDraft(null);
+                }}
+              >
+                Discard
+              </button>
+            </div>
           </div>
         </div>
       )}
