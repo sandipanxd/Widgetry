@@ -1,5 +1,5 @@
 # Build Stage for Client
-FROM node:18-alpine AS client-builder
+FROM node:26-alpine AS client-builder
 WORKDIR /app/client
 COPY client/package*.json ./
 RUN npm ci
@@ -7,14 +7,14 @@ COPY client/ ./
 RUN npm run build
 
 # Build Stage for Server
-FROM node:18-alpine AS server-builder
+FROM node:26-alpine AS server-builder
 WORKDIR /app/server
 COPY server/package*.json ./
 RUN npm ci
 COPY server/ ./
 
 # Production Stage
-FROM node:18-alpine
+FROM node:26-alpine
 ENV NODE_ENV=production
 WORKDIR /app
 
