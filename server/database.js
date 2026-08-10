@@ -64,14 +64,24 @@ function update(id, widgetData) {
   const index = widgets.findIndex((w) => w.id === id);
   if (index === -1) return null;
 
-  widgets[index] = {
-    ...widgets[index],
-    name: widgetData.name !== undefined ? widgetData.name : widgets[index].name,
-    config:
-      widgetData.config !== undefined
-        ? { ...widgets[index].config, ...widgetData.config }
-        : widgets[index].config,
+  const currentWidget = widgets[index];
+  const nextWidget = {
+    ...currentWidget,
     updatedAt: new Date().toISOString(),
+  };
+
+  for (const [key, value] of Object.entries(widgetData || {})) {
+    if (value === undefined) continue;
+    if (key === 'config') {
+      nextWidget.config = { ...(currentWidget.config || {}), ...(value || {}) };
+      continue;
+    }
+    if (key === 'id' || key === 'createdAt') continue;
+    nextWidget[key] = value;
+  }
+
+  widgets[index] = {
+    ...nextWidget,
   };
 
   saveAll(widgets);
@@ -110,6 +120,7 @@ async function removeAsync(id) {
 
 module.exports = {
   getAll,
+  saveAll,
   getById,
   create,
   update,
