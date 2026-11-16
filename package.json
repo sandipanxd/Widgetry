@@ -12,7 +12,7 @@
     "format": "prettier --write **/*.{js,jsx,ts,tsx,json,md}"
   },
   "devDependencies": {
-    "concurrently": "^10.0.6",
+    "concurrently": "^10.0.7",
     "prettier": "^3.9.10"
   },
   "engines": {
